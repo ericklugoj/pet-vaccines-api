@@ -1,0 +1,31 @@
+{
+  "name": "pet-vaccines-api",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "sls offline start",
+    "deploy": "sls deploy",
+    "dev": "sls offline start --stage dev",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.152",
+    "@types/node": "^24.3.1",
+    "@types/uuid": "^10.0.0",
+    "serverless-dynamodb-local": "^0.2.40",
+    "serverless-esbuild": "^1.55.1",
+    "serverless-offline": "^14.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "uuid": "^13.0.0"
+  }
+}

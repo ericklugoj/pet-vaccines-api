@@ -1,0 +1,257 @@
+service: pet-vaccines-api
+org: ""
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+
+  environment:
+    PETS_TABLE: ${self:service}-pets-${self:provider.stage}
+    VACCINES_TABLE: ${self:service}-vaccines-${self:provider.stage}
+    STAGE: ${self:provider.stage}
+    # Improves performance by reusing connections
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - "arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.PETS_TABLE}"
+            - "arn:aws:dynamodb:${aws:region}:*:table/${self:provider.environment.VACCINES_TABLE}"
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: "*"
+
+# Build configuration for optimized cold starts
+build:
+  esbuild:
+    bundle: true
+    minify: true
+    target: node18
+    exclude:
+      - aws-sdk
+    keepNames: true
+    sourcemap: false
+
+plugins:
+  - serverless-offline
+
+custom:
+  serverless-offline:
+    httpPort: 3000
+    host: localhost
+
+functions:
+  # Pet endpoints
+  createPet:
+    handler: src/handlers/pets.create
+    timeout: 10
+    memorySize: 512 # Higher memory for write operations
+    events:
+      - httpApi:
+          path: /pets
+          method: post
+
+  getPet:
+    handler: src/handlers/pets.getById
+    timeout: 6
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /pets/{id}
+          method: get
+
+  getAllPets:
+    handler: src/handlers/pets.getAll
+    timeout: 10
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /pets
+          method: get
+
+  updatePet:
+    handler: src/handlers/pets.update
+    timeout: 10
+    memorySize: 512 # Higher memory for complex operations
+    events:
+      - httpApi:
+          path: /pets/{id}
+          method: put
+
+  deletePet:
+    handler: src/handlers/pets.deletePet
+    timeout: 6
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /pets/{id}
+          method: delete
+
+  getPetsByOwner:
+    handler: src/handlers/pets.getByOwnerId
+    timeout: 10
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /pets/owner/{ownerId}
+          method: get
+
+  # Vaccine endpoints
+  createVaccine:
+    handler: src/handlers/vaccines.create
+    timeout: 10
+    memorySize: 512 # Higher memory for complex validations
+    events:
+      - httpApi:
+          path: /vaccines
+          method: post
+
+  getVaccine:
+    handler: src/handlers/vaccines.getById
+    timeout: 6
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /vaccines/{id}
+          method: get
+
+  getAllVaccines:
+    handler: src/handlers/vaccines.getAll
+    timeout: 10
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /vaccines
+          method: get
+
+  getVaccinesByPet:
+    handler: src/handlers/vaccines.getByPetId
+    timeout: 10
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /vaccines/pet/{petId}
+          method: get
+
+  updateVaccine:
+    handler: src/handlers/vaccines.update
+    timeout: 10
+    memorySize: 512
+    events:
+      - httpApi:
+          path: /vaccines/{id}
+          method: put
+
+  deleteVaccine:
+    handler: src/handlers/vaccines.deleteVaccine
+    timeout: 6
+    memorySize: 256
+    events:
+      - httpApi:
+          path: /vaccines/{id}
+          method: delete
+
+resources:
+  Resources:
+    # Pets table
+    PetsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.PETS_TABLE}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: ownerId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        # Global secondary index for owner queries
+        GlobalSecondaryIndexes:
+          - IndexName: OwnerIndex
+            KeySchema:
+              - AttributeName: ownerId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Project
+            Value: Learning
+          - Key: Service
+            Value: pet-vaccines-api
+
+    # Vaccines table
+    VaccinesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.VACCINES_TABLE}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: petId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        # Global secondary index for pet queries
+        GlobalSecondaryIndexes:
+          - IndexName: PetIndex
+            KeySchema:
+              - AttributeName: petId
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Project
+            Value: Learning
+          - Key: Service
+            Value: pet-vaccines-api
+
+outputs:
+  ApiGatewayRestApiId:
+    Value:
+      Ref: HttpApi
+    Export:
+      Name: ${self:service}-${self:provider.stage}-httpApiId
+
+  ApiUrl:
+    Value:
+      Fn::Join:
+        - ""
+        - - "https://"
+          - Ref: HttpApi
+          - ".execute-api."
+          - ${aws:region}
+          - ".amazonaws.com"
+    Export:
+      Name: ${self:service}-${self:provider.stage}-apiUrl
+
+  PetsTableName:
+    Value: ${self:provider.environment.PETS_TABLE}
+    Export:
+      Name: ${self:service}-${self:provider.stage}-petsTable
+
+  VaccinesTableName:
+    Value: ${self:provider.environment.VACCINES_TABLE}
+    Export:
+      Name: ${self:service}-${self:provider.stage}-vaccinesTable
